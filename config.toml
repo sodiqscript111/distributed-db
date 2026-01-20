@@ -1,0 +1,9 @@
+[server]
+port = 8080
+
+[postgres]
+nodes = ["postgres://postgres:postgres@localhost:5432/db1", "postgres://postgres:postgres@localhost:5433/db2", "postgres://postgres:postgres@localhost:5434/db3"]
+
+[replication]
+factor = 2
+hash_ring_replicas = 50
