@@ -26,6 +26,10 @@ export async function createPgNode(
 
     const pool = new Pool(poolConfig);
 
+    pool.on('error', (err) => {
+        console.error(`[WARN] PostgreSQL pool error on node ${id}: ${err.message}`);
+    });
+
     await pool.query('SELECT 1');
 
     await pool.query(`

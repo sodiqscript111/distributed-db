@@ -247,6 +247,17 @@ The server starts on port `8080`.
 
 ---
 
+## Automated Testing (Testcontainers)
+
+The test suite uses **Testcontainers** to dynamically spin up 3 isolated PostgreSQL instances in Docker, running full integration tests for CRUD, hash ring mapping, concurrent reads (`SELECT FOR SHARE`), optimistic concurrency control (OCC 409 conflict), and node failure quorum degradation.
+
+```bash
+# Run all integration tests
+npm test
+```
+
+---
+
 ## Configuration
 
 `config.toml` controls non-sensitive settings. Database credentials and node connection strings are fetched from AWS Secrets Manager at startup.
