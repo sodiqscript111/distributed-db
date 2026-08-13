@@ -7,6 +7,14 @@ services:
       POSTGRES_DB: db1
     ports:
       - "5432:5432"
+    volumes:
+      - pg1_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres-2:
     image: postgres:16
@@ -16,6 +24,14 @@ services:
       POSTGRES_DB: db2
     ports:
       - "5433:5432"
+    volumes:
+      - pg2_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres-3:
     image: postgres:16
@@ -25,3 +41,16 @@ services:
       POSTGRES_DB: db3
     ports:
       - "5434:5432"
+    volumes:
+      - pg3_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg1_data:
+  pg2_data:
+  pg3_data:

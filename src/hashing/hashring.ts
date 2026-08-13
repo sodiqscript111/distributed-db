@@ -14,10 +14,32 @@ export class HashRing {
     addNode(nodeId: string): void {
         for (let i = 0; i < this.replicas; i++) {
             const hash = crc32.str(`${i}${nodeId}`) >>> 0;
+
+            if (this.nodes.has(hash)) {
+                console.log(`[WARN] Hash collision at ${hash} for virtual node ${i} of ${nodeId}, skipping`);
+                continue;
+            }
+
             this.nodes.set(hash, nodeId);
             this.keys.push(hash);
         }
         this.keys.sort((a, b) => a - b);
+    }
+
+    removeNode(nodeId: string): void {
+        const hashesToRemove = new Set<number>();
+
+        for (const [hash, id] of this.nodes) {
+            if (id === nodeId) {
+                hashesToRemove.add(hash);
+            }
+        }
+
+        for (const hash of hashesToRemove) {
+            this.nodes.delete(hash);
+        }
+
+        this.keys = this.keys.filter(k => !hashesToRemove.has(k));
     }
 
     getNode(key: string): string {
@@ -61,6 +83,10 @@ export class HashRing {
         }
 
         return result;
+    }
+
+    getUniqueNodeCount(): number {
+        return new Set(this.nodes.values()).size;
     }
 
     private binarySearch(hash: number): number {
