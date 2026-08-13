@@ -2,11 +2,21 @@ import express, { Request, Response, NextFunction } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as toml from 'toml';
+import {
+    SecretsManagerClient,
+    GetSecretValueCommand,
+} from '@aws-sdk/client-secrets-manager';
 import { Config } from './types/config';
 import { HashRing } from './hashing/hashring';
 import { PgNode, createPgNode } from './pgnode/node';
 import { Handler } from './api/handler';
 import { setupRoutes } from './api/routes';
+
+interface DbSecret {
+    username: string;
+    password: string;
+    nodes: string[];
+}
 
 function loadConfig(configPath: string): Config {
     const resolved = path.isAbsolute(configPath)
@@ -16,15 +26,42 @@ function loadConfig(configPath: string): Config {
     return toml.parse(content) as Config;
 }
 
+async function fetchDbSecret(region: string, secretName: string): Promise<DbSecret> {
+    const client = new SecretsManagerClient({ region });
+
+    const response = await client.send(
+        new GetSecretValueCommand({ SecretId: secretName })
+    );
+
+    if (!response.SecretString) {
+        throw new Error(`Secret "${secretName}" has no string value`);
+    }
+
+    const secret = JSON.parse(response.SecretString) as DbSecret;
+
+    if (!Array.isArray(secret.nodes) || secret.nodes.length === 0) {
+        throw new Error(`Secret "${secretName}" is missing the "nodes" array`);
+    }
+
+    return secret;
+}
+
 async function main(): Promise<void> {
     const configPath = process.env.CONFIG_PATH || 'config.toml';
     const cfg = loadConfig(configPath);
 
+    const awsRegion = process.env.AWS_REGION || cfg.aws.region;
+    const secretName = process.env.SECRET_NAME || cfg.aws.secret_name;
+
+    console.log(`Fetching DB credentials from Secrets Manager: ${secretName} (region: ${awsRegion})`);
+    const secret = await fetchDbSecret(awsRegion, secretName);
+    console.log(`Retrieved ${secret.nodes.length} node connection string(s) from secret`);
+
     const ring = new HashRing(cfg.replication.hash_ring_replicas);
     const nodes = new Map<string, PgNode>();
 
-    for (let i = 0; i < cfg.postgres.nodes.length; i++) {
-        const connectionString = cfg.postgres.nodes[i];
+    for (let i = 0; i < secret.nodes.length; i++) {
+        const connectionString = secret.nodes[i];
         const nodeId = `node-${i}`;
         try {
             const node = await createPgNode(nodeId, connectionString);
@@ -41,7 +78,7 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
-    console.log(`${nodes.size}/${cfg.postgres.nodes.length} PostgreSQL nodes connected`);
+    console.log(`${nodes.size}/${secret.nodes.length} PostgreSQL nodes connected`);
 
     const handler = new Handler(
         nodes,

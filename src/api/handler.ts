@@ -30,6 +30,17 @@ export class Handler {
         this.replicationFactor = replicationFactor;
     }
 
+    private isStale(
+        clientClock: Record<string, number>,
+        dbClock: Record<string, number>
+    ): boolean {
+        for (const [nodeId, dbTs] of Object.entries(dbClock)) {
+            const clientTs = clientClock[nodeId] ?? 0;
+            if (dbTs > clientTs) return true;
+        }
+        return false;
+    }
+
     async insert(req: Request, res: Response): Promise<void> {
         const startTime = Date.now();
         console.log('========== [INSERT] Request Started ==========');
@@ -150,18 +161,29 @@ export class Handler {
 
                 console.log(`[INFO] Attempting GET on Node: ${nodeId}`);
 
-                const result = await node.pool.query(
-                    'SELECT id, name, email, created_at, updated_at, vector_clock FROM records WHERE id = $1',
-                    [id]
-                );
+                const client = await node.pool.connect();
+                try {
+                    await client.query('BEGIN');
+                    const result = await client.query(
+                        `SELECT id, name, email, created_at, updated_at, vector_clock
+                         FROM records WHERE id = $1 FOR SHARE`,
+                        [id]
+                    );
+                    await client.query('COMMIT');
 
-                if (result.rows.length === 0) {
-                    console.log(`[INFO] Record ${id} not found on node ${nodeId}`);
-                    return null;
+                    if (result.rows.length === 0) {
+                        console.log(`[INFO] Record ${id} not found on node ${nodeId}`);
+                        return null;
+                    }
+
+                    console.log(`[INFO] Successfully read from node ${nodeId}`);
+                    return { record: result.rows[0] as VersionedRecord, nodeId };
+                } catch (err) {
+                    await client.query('ROLLBACK').catch(() => {});
+                    throw err;
+                } finally {
+                    client.release();
                 }
-
-                console.log(`[INFO] Successfully read from node ${nodeId}`);
-                return { record: result.rows[0] as VersionedRecord, nodeId };
             })
         );
 
@@ -225,7 +247,7 @@ export class Handler {
         console.log('========== [UPDATE] Request Started ==========');
 
         const { id } = req.params;
-        const { name, email } = req.body;
+        const { name, email, record_clock: clientClock } = req.body;
 
         if (!id || !UUID_REGEX.test(id)) {
             console.log('[ERROR] Invalid or missing UUID');
@@ -277,7 +299,22 @@ export class Handler {
                 return;
             }
 
-            const existingClock: Record<string, number> = lockResult.rows[0].vector_clock || {};
+            const dbClock: Record<string, number> = lockResult.rows[0].vector_clock || {};
+
+            if (clientClock && typeof clientClock === 'object') {
+                if (this.isStale(clientClock as Record<string, number>, dbClock)) {
+                    await client.query('ROLLBACK');
+                    console.log(`[WARN] Stale write detected for record ${id}`);
+                    res.status(409).json({
+                        error: 'conflict: record was modified since you last read it',
+                        id,
+                        current_clock: dbClock
+                    });
+                    return;
+                }
+            }
+
+            const existingClock: Record<string, number> = { ...dbClock };
             existingClock[primaryNodeId] = (existingClock[primaryNodeId] || 0) + 1;
 
             const now = new Date();
@@ -392,7 +429,6 @@ export class Handler {
             return;
         }
 
-        let deletedCount = 0;
         const results = await Promise.allSettled(
             replicaNodeIds.map(async (nodeId) => {
                 const node = this.nodes.get(nodeId);
@@ -406,7 +442,6 @@ export class Handler {
                 );
 
                 const affected = result.rowCount ?? 0;
-                if (affected > 0) deletedCount++;
 
                 if (affected === 0) {
                     console.log(`[INFO] Record ${id} not found on node ${nodeId}`);
