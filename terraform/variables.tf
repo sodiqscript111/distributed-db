@@ -20,6 +20,11 @@ variable "db_password" {
   description = "Master password for all RDS instances. Must be at least 8 characters."
   type        = string
   sensitive   = true
+
+  validation {
+    condition     = length(var.db_password) >= 8
+    error_message = "The db_password must be at least 8 characters in length."
+  }
 }
 
 variable "db_instance_class" {
@@ -32,12 +37,22 @@ variable "db_allocated_storage" {
   description = "Allocated storage in GB for each RDS instance"
   type        = number
   default     = 100
+
+  validation {
+    condition     = var.db_allocated_storage >= 20
+    error_message = "db_allocated_storage must be at least 20 GB for AWS RDS PostgreSQL."
+  }
 }
 
 variable "db_max_allocated_storage" {
   description = "Maximum storage autoscaling ceiling in GB"
   type        = number
   default     = 500
+
+  validation {
+    condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+    error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
+  }
 }
 
 variable "db_engine_version" {

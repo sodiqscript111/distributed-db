@@ -59,10 +59,26 @@ export class VectorClock {
         this.clock.set(nodeId, timestamp);
     }
 
+    isEqual(other: VectorClock): boolean {
+        if (this.clock.size !== other.clock.size) return false;
+        for (const [nodeId, ts] of this.clock) {
+            if (other.clock.get(nodeId) !== ts) return false;
+        }
+        return true;
+    }
+
+    isConcurrent(other: VectorClock): boolean {
+        return this.compare(other) === 0 && !this.isEqual(other);
+    }
+
     static fromObject(obj: Record<string, number>): VectorClock {
         const vc = new VectorClock();
-        for (const [key, value] of Object.entries(obj)) {
-            vc.set(key, value);
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+            for (const [key, value] of Object.entries(obj)) {
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                    vc.set(key, value);
+                }
+            }
         }
         return vc;
     }

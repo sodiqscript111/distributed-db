@@ -235,13 +235,18 @@ describe('Distributed Database Integration Tests with Testcontainers', () => {
             .post('/db')
             .send({ name: 'Resilient User', email: 'resilient@example.com' });
 
-        expect([201, 500]).toContain(createRes.status);
+        expect(createRes.status).toBe(201);
+        expect(createRes.body.status).toBe('ok');
 
-        if (createRes.status === 201) {
-            const getRes = await request(app).get(`/db/${createRes.body.id}`);
-            expect(getRes.status).toBe(200);
-            expect(getRes.body.name).toBe('Resilient User');
-        }
+        const getRes = await request(app).get(`/db/${createRes.body.id}`);
+        expect(getRes.status).toBe(200);
+        expect(getRes.body.name).toBe('Resilient User');
+
+        const updateRes = await request(app)
+            .put(`/db/${createRes.body.id}`)
+            .send({ name: 'Resilient User Updated', record_clock: createRes.body.record_clock });
+        expect(updateRes.status).toBe(200);
+        expect(updateRes.body.status).toBe('ok');
     });
 
     it('fails write with 500 quorum not reached when 2 of 3 nodes are down', async () => {

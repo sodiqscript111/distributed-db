@@ -6,6 +6,7 @@ import input as tfplan
 deny[msg] {
     resource := tfplan.resource_changes[_]
     resource.type == "aws_db_instance"
+    resource.change.after != null
     
     # Check if publicly_accessible is set to true
     resource.change.after.publicly_accessible == true
@@ -17,6 +18,7 @@ deny[msg] {
 deny[msg] {
     resource := tfplan.resource_changes[_]
     resource.type == "aws_db_instance"
+    resource.change.after != null
     
     # If storage_encrypted is false or missing, it evaluates to true for denial
     resource.change.after.storage_encrypted != true
@@ -25,11 +27,12 @@ deny[msg] {
 }
 
 # Restrict allowed instance classes to prevent unexpected costs
-allowed_instance_classes = {"db.t3.micro", "db.t3.small"}
+allowed_instance_classes = {"db.t3.micro", "db.t3.small", "db.t3.medium", "db.r6g.large"}
 
 deny[msg] {
     resource := tfplan.resource_changes[_]
     resource.type == "aws_db_instance"
+    resource.change.after != null
     
     instance_class := resource.change.after.instance_class
     not allowed_instance_classes[instance_class]

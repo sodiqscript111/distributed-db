@@ -5,6 +5,15 @@ port = 8080
 factor = 2
 hash_ring_replicas = 50
 
+[database]
+local_nodes = [
+  "postgres://postgres:postgres@localhost:5432/db1",
+  "postgres://postgres:postgres@localhost:5433/db2",
+  "postgres://postgres:postgres@localhost:5434/db3"
+]
+
 [aws]
+enabled = false
 region = "us-east-1"
 secret_name = "distributed-db/db-credentials"
+

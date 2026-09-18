@@ -37,11 +37,21 @@ export async function createPgNode(
             id UUID PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW(),
-            updated_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
             vector_clock JSONB DEFAULT '{}'
         )
     `);
+
+    await pool.query(`
+        DO $$
+        BEGIN
+            ALTER TABLE records ALTER COLUMN created_at TYPE TIMESTAMPTZ;
+            ALTER TABLE records ALTER COLUMN updated_at TYPE TIMESTAMPTZ;
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END $$;
+    `).catch(() => {});
 
     return { id, pool, connectionString };
 }

@@ -3,3 +3,21 @@ dist/
 *.log
 .env
 .idea/
+.vscode/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Testing & Coverage
+coverage/
+.vitest/
+
+# OS
+.DS_Store
+Thumbs.db

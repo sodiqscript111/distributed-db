@@ -6,7 +6,7 @@ import {
     SecretsManagerClient,
     GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager';
-import { Config } from './types/config';
+import { Config, validateConfig } from './types/config';
 import { HashRing } from './hashing/hashring';
 import { PgNode, createPgNode } from './pgnode/node';
 import { Handler } from './api/handler';
@@ -46,22 +46,58 @@ async function fetchDbSecret(region: string, secretName: string): Promise<DbSecr
     return secret;
 }
 
-async function main(): Promise<void> {
-    const configPath = process.env.CONFIG_PATH || 'config.toml';
-    const cfg = loadConfig(configPath);
+async function resolveNodeConnectionStrings(cfg: Config): Promise<string[]> {
+    if (process.env.POSTGRES_NODES) {
+        const envNodes = process.env.POSTGRES_NODES.split(',').map(s => s.trim()).filter(Boolean);
+        if (envNodes.length > 0) {
+            console.log(`[INFO] Using ${envNodes.length} node connection string(s) from POSTGRES_NODES env var`);
+            return envNodes;
+        }
+    }
+
+    const useSecretsManager = process.env.USE_SECRETS_MANAGER === 'true' || cfg.aws?.enabled === true;
+    if (useSecretsManager) {
+        const awsRegion = process.env.AWS_REGION || cfg.aws.region;
+        const secretName = process.env.SECRET_NAME || cfg.aws.secret_name;
+        console.log(`Fetching DB credentials from Secrets Manager: ${secretName} (region: ${awsRegion})`);
+        try {
+            const secret = await fetchDbSecret(awsRegion, secretName);
+            console.log(`Retrieved ${secret.nodes.length} node connection string(s) from secret`);
+            return secret.nodes;
+        } catch (err) {
+            console.warn(`[WARN] Failed to fetch secrets from AWS Secrets Manager: ${err}`);
+            if (cfg.database?.local_nodes && cfg.database.local_nodes.length > 0) {
+                console.log(`[INFO] Falling back to local nodes configured in config.toml`);
+                return cfg.database.local_nodes;
+            }
+            throw err;
+        }
+    }
+
+    if (cfg.database?.local_nodes && cfg.database.local_nodes.length > 0) {
+        console.log(`[INFO] Using ${cfg.database.local_nodes.length} local node(s) from config.toml`);
+        return cfg.database.local_nodes;
+    }
 
     const awsRegion = process.env.AWS_REGION || cfg.aws.region;
     const secretName = process.env.SECRET_NAME || cfg.aws.secret_name;
-
     console.log(`Fetching DB credentials from Secrets Manager: ${secretName} (region: ${awsRegion})`);
     const secret = await fetchDbSecret(awsRegion, secretName);
-    console.log(`Retrieved ${secret.nodes.length} node connection string(s) from secret`);
+    return secret.nodes;
+}
+
+async function main(): Promise<void> {
+    const configPath = process.env.CONFIG_PATH || 'config.toml';
+    const cfg = loadConfig(configPath);
+    validateConfig(cfg);
+
+    const connectionStrings = await resolveNodeConnectionStrings(cfg);
 
     const ring = new HashRing(cfg.replication.hash_ring_replicas);
     const nodes = new Map<string, PgNode>();
 
-    for (let i = 0; i < secret.nodes.length; i++) {
-        const connectionString = secret.nodes[i];
+    for (let i = 0; i < connectionStrings.length; i++) {
+        const connectionString = connectionStrings[i];
         const nodeId = `node-${i}`;
         try {
             const node = await createPgNode(nodeId, connectionString);
@@ -78,7 +114,7 @@ async function main(): Promise<void> {
         process.exit(1);
     }
 
-    console.log(`${nodes.size}/${secret.nodes.length} PostgreSQL nodes connected`);
+    console.log(`${nodes.size}/${connectionStrings.length} PostgreSQL nodes connected`);
 
     const handler = new Handler(
         nodes,
